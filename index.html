@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Investment Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">📊 My Investment Dashboard</div>
+  <div class="topbar-right">
+    <span id="lastUpdated" class="muted small">Not refreshed yet</span>
+    <button id="refreshBtn" class="btn btn-ghost">↻ Refresh now</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+  <button class="tab-btn" data-tab="portfolio">Stocks</button>
+  <button class="tab-btn" data-tab="metals">Gold, Silver &amp; Metals</button>
+  <button class="tab-btn" data-tab="education">Learn Investing</button>
+  <button class="tab-btn" data-tab="settings">Settings</button>
+</nav>
+
+<main>
+
+  <!-- DASHBOARD -->
+  <section id="tab-dashboard" class="tab-panel active">
+    <div class="cards-row">
+      <div class="card">
+        <div class="card-label">Total Value</div>
+        <div class="card-value" id="statTotalValue">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Total Cost</div>
+        <div class="card-value" id="statTotalCost">$0.00</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Gain / Loss</div>
+        <div class="card-value" id="statGainLoss">$0.00</div>
+        <div class="card-sub" id="statGainLossPct">0.0%</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Holdings Tracked</div>
+        <div class="card-value" id="statHoldingCount">0</div>
+      </div>
+    </div>
+
+    <div class="dashboard-grid">
+      <div class="panel">
+        <h3>Allocation</h3>
+        <div id="allocationChart" class="donut-wrap">
+          <svg id="donutSvg" viewBox="0 0 200 200" width="200" height="200"></svg>
+          <div id="donutLegend" class="donut-legend"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Needs a Look 👀</h3>
+        <p class="muted small">Holdings with a strong buy or sell signal right now.</p>
+        <div id="needsLookList" class="needs-look-list">
+          <p class="muted small">Add some holdings to see signals here.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>All Holdings — Quick Signal View</h3>
+      <div class="table-wrap">
+        <table id="dashboardTable" class="data-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Type</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Signal</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- STOCKS -->
+  <section id="tab-portfolio" class="tab-panel">
+    <div class="panel-header-row">
+      <h2>Stocks</h2>
+      <button class="btn btn-primary" id="addStockBtn">+ Add Stock</button>
+    </div>
+    <p class="muted small">Prices are fetched automatically where possible. If a provider is unreachable, you can enter a price by hand — the app never blocks you.</p>
+    <div class="table-wrap">
+      <table id="stockTable" class="data-table">
+        <thead>
+          <tr>
+            <th>Symbol</th><th>Qty</th><th>Avg Cost</th><th>Price</th><th>Value</th><th>Gain/Loss</th><th>Signal</th><th>Source</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="stockEmptyMsg" class="muted small">No stocks yet. Click "Add Stock" to add the ones you already own.</p>
+  </section>
+
+  <!-- METALS -->
+  <section id="tab-metals" class="tab-panel">
+    <div class="panel-header-row">
+      <h2>Gold, Silver &amp; Other Metals</h2>
+      <button class="btn btn-primary" id="addMetalBtn">+ Add Metal / Other Asset</button>
+    </div>
+    <p class="muted small">Gold, silver, platinum and palladium spot prices update live and automatically. "Other" assets (coins, collectibles, anything without a live price feed) use a price you enter yourself.</p>
+    <div class="table-wrap">
+      <table id="metalTable" class="data-table">
+        <thead>
+          <tr>
+            <th>Name</th><th>Type</th><th>Qty (oz)</th><th>Avg Cost / oz</th><th>Price / oz &amp; Signal</th><th>Value</th><th>Gain/Loss</th><th>Source</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p id="metalEmptyMsg" class="muted small">No metals yet. Click "Add Metal / Other Asset" to add gold, silver, platinum, palladium, or anything else you hold.</p>
+  </section>
+
+  <!-- EDUCATION -->
+  <section id="tab-education" class="tab-panel">
+    <h2>Learn Investing — No Experience Needed</h2>
+    <p class="muted">Written so a total beginner can follow along. No jargon left unexplained.</p>
+
+    <div class="lesson-list" id="lessonList"></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="tab-settings" class="tab-panel">
+    <h2>Settings</h2>
+
+    <div class="panel">
+      <h3>Auto-Refresh</h3>
+      <label class="field-row">
+        <span>Check prices automatically every</span>
+        <select id="refreshIntervalSelect">
+          <option value="0">Manual only (never auto-refresh)</option>
+          <option value="60000">1 minute</option>
+          <option value="300000" selected>5 minutes (recommended)</option>
+          <option value="900000">15 minutes</option>
+          <option value="1800000">30 minutes</option>
+        </select>
+      </label>
+      <p class="muted small">Auto-refresh only runs while this page is open in your browser tab.</p>
+    </div>
+
+    <div class="panel">
+      <h3>Data Provider Status</h3>
+      <p class="muted small">This app uses free, no-signup price sources. If one goes down, it automatically tries the next. This log shows what happened on the last refresh.</p>
+      <div id="providerLog" class="provider-log">No refresh yet.</div>
+    </div>
+
+    <div class="panel">
+      <h3>Optional: Add a Free API Key for More Reliable Stock Prices</h3>
+      <p class="muted small">Stock prices use free public sources that occasionally rate-limit or go down. For extra reliability, you can get a free key from
+        <a href="https://twelvedata.com/pricing" target="_blank" rel="noopener">Twelve Data</a> (800 free requests/day, no card required) and paste it below. Completely optional — the app works without it.</p>
+      <label class="field-row">
+        <span>Twelve Data API key</span>
+        <input type="text" id="apiKeyInput" placeholder="optional">
+      </label>
+      <button class="btn btn-secondary" id="saveApiKeyBtn">Save Key</button>
+    </div>
+
+    <div class="panel">
+      <h3>Your Data</h3>
+      <p class="muted small">Everything you enter is stored only in this browser (localStorage) — nothing is sent to any server except public price lookups. Back up your data regularly, especially before clearing browser data.</p>
+      <button class="btn btn-secondary" id="exportBtn">⬇ Export Backup (.json)</button>
+      <label class="btn btn-secondary file-btn">
+        ⬆ Import Backup
+        <input type="file" id="importInput" accept=".json" hidden>
+      </label>
+      <button class="btn btn-danger" id="clearAllBtn">🗑 Clear All Data</button>
+    </div>
+  </section>
+
+</main>
+
+<!-- Add/Edit Holding Modal -->
+<div id="modalOverlay" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Holding</h3>
+      <button id="modalClose" class="btn-icon">✕</button>
+    </div>
+    <form id="holdingForm">
+      <input type="hidden" id="holdingId">
+      <input type="hidden" id="holdingKind">
+
+      <div id="metalTypeRow" class="field-row hidden">
+        <span>Metal / Asset type</span>
+        <select id="metalTypeSelect">
+          <option value="gold">Gold (XAU)</option>
+          <option value="silver">Silver (XAG)</option>
+          <option value="platinum">Platinum (XPT)</option>
+          <option value="palladium">Palladium (XPD)</option>
+          <option value="other">Other (manual price)</option>
+        </select>
+      </div>
+
+      <div id="symbolRow" class="field-row">
+        <span id="symbolLabel">Ticker Symbol</span>
+        <input type="text" id="symbolInput" placeholder="e.g. AAPL" autocomplete="off">
+      </div>
+
+      <div class="field-row">
+        <span>Display Name</span>
+        <input type="text" id="nameInput" placeholder="e.g. Apple Inc. (optional)">
+      </div>
+
+      <div class="field-row">
+        <span id="qtyLabel">Quantity (shares)</span>
+        <input type="number" id="qtyInput" step="any" min="0" placeholder="0">
+      </div>
+
+      <div class="field-row">
+        <span id="costLabel">Average Cost / share</span>
+        <input type="number" id="costInput" step="any" min="0" placeholder="0.00">
+      </div>
+
+      <div id="manualPriceRow" class="field-row hidden">
+        <span>Current Price (manual)</span>
+        <input type="number" id="manualPriceInput" step="any" min="0" placeholder="0.00">
+      </div>
+
+      <p class="muted small" style="margin: -6px 0 12px;">Optional — only needed if live data can't be fetched for this holding. Helps the signal engine even without a live source.</p>
+      <div class="field-row">
+        <span>52-Week High (optional)</span>
+        <input type="number" id="manualHighInput" step="any" min="0" placeholder="0.00">
+      </div>
+      <div class="field-row">
+        <span>52-Week Low (optional)</span>
+        <input type="number" id="manualLowInput" step="any" min="0" placeholder="0.00">
+      </div>
+
+      <div class="field-row">
+        <span>Notes (optional)</span>
+        <input type="text" id="notesInput" placeholder="anything you want to remember">
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="cancelFormBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
