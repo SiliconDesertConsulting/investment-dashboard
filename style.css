@@ -281,6 +281,20 @@ input[type="text"], input[type="number"], select {
 .lesson-body ul { margin: 0 0 12px 20px; }
 .lesson-check { margin-top: 10px; }
 
+.research-output {
+  line-height: 1.7;
+  color: #d5d9e5;
+  max-width: 800px;
+}
+.research-output h1, .research-output h2, .research-output h3 {
+  color: var(--text);
+  margin: 18px 0 8px;
+}
+.research-output h1:first-child, .research-output h2:first-child, .research-output h3:first-child { margin-top: 0; }
+.research-output p { margin: 0 0 12px 0; }
+.research-output ul, .research-output ol { margin: 0 0 12px 22px; }
+.research-output strong { color: var(--text); }
+
 .toast {
   position: fixed;
   bottom: 20px;
