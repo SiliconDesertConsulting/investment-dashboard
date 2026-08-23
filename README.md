@@ -25,6 +25,20 @@ The Dashboard tab includes a chart of the S&P 500 (the overall US stock market) 
 
 In Settings → Alerts, click "Enable Notifications" to let your browser ask for permission. Once granted, you'll get a desktop notification the moment any holding — or the S&P 500 — flips to a 🟢 buy signal or a 🔴 pricey signal. Notifications only fire on a change, never on every refresh, so they won't spam you. This only works while the dashboard tab is open in your browser (there's no server to send notifications when it's closed).
 
+## AI Research tab
+
+The "AI Research" tab generates a "50-years-of-experience investor" style report on demand — industry trend analysis, industry investment opportunities, recent news impact, economic indicator impact, portfolio diversification strategy, top 5 industry risks, a risk assessment of your actual holdings, or a full buy/hold/sell analysis of a stock.
+
+This requires **your own API key** from an AI provider:
+
+1. Go to the "AI Research" tab → "AI Setup".
+2. Choose a provider — Anthropic (Claude) or OpenAI — and paste in an API key from that provider's console ([Anthropic](https://console.anthropic.com/settings/keys) or [OpenAI](https://platform.openai.com/api-keys)).
+3. Click "Save AI Settings", then pick an analysis type and click "Generate Analysis".
+
+Why bring-your-own-key: a static GitHub Pages site has no server to safely hold a shared key, so the app calls the AI provider directly from your browser using a key only you control. Two things follow from that: **your key is stored in this browser's localStorage** (treat it like a password — don't use this on a shared computer without clearing it afterward), and **each report costs a small amount on your own provider account**, billed by the AI company, not by this app. The portfolio risk assessment and stock analysis options automatically include your real holdings from the Stocks/Metals tabs as context, so the report reflects what you actually own.
+
+None of this is financial advice — it's an AI-generated analysis for research and learning purposes, and should be one input among several before making any investment decision.
+
 ## The "is now a good time to buy" signal
 
 For each holding, the app looks at the current price against whatever recent-price context it has (a ~1-year price history from the data source, or a 52-week high/low, or — if neither is available — the price history the app has quietly collected itself while you keep it open) and gives one of three plain-English verdicts:
