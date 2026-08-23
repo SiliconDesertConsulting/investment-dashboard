@@ -21,6 +21,7 @@
   <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
   <button class="tab-btn" data-tab="portfolio">Stocks</button>
   <button class="tab-btn" data-tab="metals">Gold, Silver &amp; Metals</button>
+  <button class="tab-btn" data-tab="research">AI Research</button>
   <button class="tab-btn" data-tab="education">Learn Investing</button>
   <button class="tab-btn" data-tab="settings">Settings</button>
 </nav>
@@ -132,6 +133,61 @@
       </table>
     </div>
     <p id="metalEmptyMsg" class="muted small">No metals yet. Click "Add Metal / Other Asset" to add gold, silver, platinum, palladium, or anything else you hold.</p>
+  </section>
+
+  <!-- AI RESEARCH -->
+  <section id="tab-research" class="tab-panel">
+    <h2>AI Research</h2>
+    <p class="muted small">Generate a "50-years-of-experience investor" style analysis on demand. This calls an AI provider directly from your browser using your own API key (set it up below) — nothing goes through any server of ours.</p>
+
+    <div class="panel">
+      <div class="field-row">
+        <span>Analysis type</span>
+        <select id="researchType">
+          <option value="industry_trends">Industry trend analysis</option>
+          <option value="industry_opportunities">Industry investment opportunities</option>
+          <option value="news_impact">Recent news impact</option>
+          <option value="econ_indicator">Economic indicator impact</option>
+          <option value="diversification">Portfolio diversification strategy</option>
+          <option value="top_risks">Top 5 industry risks</option>
+          <option value="portfolio_risk">My portfolio risk assessment (uses your real holdings)</option>
+          <option value="stock_analysis">Stock analysis (buy / hold / sell)</option>
+        </select>
+      </div>
+      <div id="researchInputs"></div>
+      <button class="btn btn-primary" id="generateResearchBtn">✨ Generate Analysis</button>
+      <p id="researchStatus" class="muted small"></p>
+    </div>
+
+    <div class="panel hidden" id="researchOutputPanel">
+      <div class="panel-header-row">
+        <h3 style="margin:0;">Report</h3>
+        <button class="btn btn-secondary" id="copyResearchBtn">📋 Copy</button>
+      </div>
+      <div id="researchOutput" class="research-output"></div>
+    </div>
+
+    <div class="panel">
+      <h3>AI Setup</h3>
+      <p class="muted small">Bring your own API key from Anthropic or OpenAI. Your key is stored only in this browser's localStorage and is sent directly to the provider you choose when you click "Generate" — never to us or anywhere else. Treat it like a password: anyone with access to this browser profile could read it from Settings.</p>
+      <label class="field-row">
+        <span>Provider</span>
+        <select id="aiProviderSelect">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </label>
+      <label class="field-row">
+        <span>Model</span>
+        <input type="text" id="aiModelInput" placeholder="e.g. claude-sonnet-5">
+      </label>
+      <label class="field-row">
+        <span>API Key</span>
+        <input type="text" id="aiApiKeyInput" placeholder="paste your API key">
+      </label>
+      <button class="btn btn-secondary" id="saveAiSettingsBtn">Save AI Settings</button>
+      <p class="muted small">Get a key: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">Anthropic Console</a> or <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">OpenAI Platform</a>. Each report costs a small amount on your provider account — check their pricing pages.</p>
+    </div>
   </section>
 
   <!-- EDUCATION -->
