@@ -20,7 +20,10 @@ function defaultState() {
     settings: {
       refreshInterval: 300000,
       apiKey: "",
-      notificationsEnabled: false
+      notificationsEnabled: false,
+      aiProvider: "anthropic",
+      aiModel: "claude-sonnet-5",
+      aiApiKey: ""
     }
   };
 }
@@ -1023,14 +1026,247 @@ function renderLessons() {
 }
 
 /* ============================================================
+   AI RESEARCH — "50 years of experience" investor prompts
+   Calls an AI provider directly from the browser using a key
+   the user supplies themselves (bring-your-own-key). Nothing is
+   proxied through any server this app controls.
+   ============================================================ */
+
+const PROMPT_TEMPLATES = {
+  industry_trends: ({ industry }) =>
+    `As an investor with 50 years of experience, provide a comprehensive analysis of the current market trends in the ${industry} industry. Your analysis should include identifying key growth areas, potential risks, and emerging opportunities based on current and forecasted market conditions. You should use your extensive investment experience to provide insights and recommendations for future investment strategies. Your analysis should be presented in a clear and concise report that can be understood by both industry experts and those less familiar with the industry.`,
+
+  industry_opportunities: ({ industry }) =>
+    `Leverage your 50 years of experience as an investor to identify potential investment opportunities within the ${industry} industry. Utilize your extensive knowledge and understanding of market trends, financial analysis, and risk management to assess potential opportunities. The task involves conducting comprehensive industry research, evaluating company financials, and assessing potential risks and returns. Prepare a detailed report outlining the most promising opportunities, your rationale for selection, and potential risks and mitigation strategies.`,
+
+  news_impact: ({ news }) =>
+    `As an experienced investor with 50 years of expertise, analyze and explain how the following recent news could potentially affect the market: "${news}". Leverage your deep understanding of market trends, historical data, and economic indicators to provide a comprehensive analysis. The explanation should include potential short-term and long-term impacts, the sectors that could be affected, and any possible opportunities or risks for investors. The aim is to provide a clear and insightful analysis that aids in making informed investment decisions.`,
+
+  econ_indicator: ({ indicator, market }) =>
+    `As an investor with 50 years of experience, analyze and explain the impact of the following change in an economic indicator on a market. Indicator / recent change: "${indicator}". Market: "${market}". The explanation should include an interpretation of the indicator's recent trends, their implications for different sectors, potential risks and opportunities for investors, and a prediction of future market behavior based on your analysis. Provide strategic advice on how to navigate the market under these conditions.`,
+
+  diversification: ({ industry }) =>
+    `As an investor with 50 years of experience, suggest strategies for diversifying an investment portfolio that is currently focused on ${industry}. Research potential investment opportunities in various sectors, analyze their risk and return profiles, and recommend a balanced mix of assets to reduce risk and maximize returns. The proposed strategies should be well-informed, practical, and tailored to the investor's financial goals and risk tolerance.`,
+
+  top_risks: ({ industry }) =>
+    `As an investor with 50 years of experience, identify the top 5 risks associated with investing in the ${industry} industry. Thoroughly analyze the current market trends, economic factors, regulatory environment, and potential challenges specific to this industry. Your analysis should result in a comprehensive list of the top 5 risks that an investor would face when investing in this industry. Each risk should be clearly defined and include a detailed explanation of why it is a significant concern.`,
+
+  portfolio_risk: ({ portfolio }) =>
+    `As an experienced investor with 50 years of knowledge, assess the risk profile of my investment portfolio, listed below. Analyze each asset and evaluate its associated risks, considering factors such as market volatility, liquidity risk, credit risk, and interest rate risk. Use historical context and reasonable future expectations to assess the potential performance of each asset. Provide a comprehensive report detailing your findings and recommendations for reducing risk and optimizing returns.\n\nMy portfolio:\n${portfolio}`,
+
+  stock_analysis: ({ stock, context }) =>
+    `Act as an investor with 50 years of experience. Provide a comprehensive analysis of ${stock}. This should include a thorough evaluation of the company's financial health, its competitive position in the industry, and any macroeconomic factors that could impact its performance. The analysis should also include an assessment of the stock's valuation, taking into account its projected earnings growth and other key financial metrics. Based on your analysis, provide a recommendation on whether to buy, hold, or sell the stock. Your analysis should be backed with supporting data and reasoning.${context ? `\n\nFor context, here is what I currently hold: ${context}` : ""}`
+};
+
+const RESEARCH_FIELDS = {
+  industry_trends: [{ id: "riIndustry", label: "Industry", placeholder: "e.g. renewable energy" }],
+  industry_opportunities: [{ id: "riIndustry", label: "Industry", placeholder: "e.g. semiconductors" }],
+  news_impact: [{ id: "riNews", label: "Recent news / event", placeholder: "e.g. the Fed just cut interest rates by 0.5%", textarea: true }],
+  econ_indicator: [
+    { id: "riIndicator", label: "Economic indicator & recent change", placeholder: "e.g. CPI inflation rose to 4.2%" },
+    { id: "riMarket", label: "Market", placeholder: "e.g. US stock market" }
+  ],
+  diversification: [{ id: "riIndustry", label: "Industry you're currently focused on", placeholder: "e.g. technology" }],
+  top_risks: [{ id: "riIndustry", label: "Industry", placeholder: "e.g. commercial real estate" }],
+  portfolio_risk: [],
+  stock_analysis: [{ id: "riStock", label: "Stock ticker or company", placeholder: "e.g. AAPL" }]
+};
+
+function dominantHoldingCategory() {
+  const totals = {};
+  state.holdings.forEach(h => {
+    const cat = h.kind === "stock" ? "stocks" : h.type;
+    totals[cat] = (totals[cat] || 0) + (holdingValue(h) || 0);
+  });
+  const sorted = Object.entries(totals).sort((a, b) => b[1] - a[1]);
+  return sorted.length ? sorted[0][0] : "";
+}
+
+function buildPortfolioSummary() {
+  if (!state.holdings.length) return "(No holdings added to the dashboard yet.)";
+  return state.holdings.map(h => {
+    const price = getEffectivePrice(h);
+    const value = holdingValue(h);
+    const cost = holdingCost(h);
+    const gl = value != null && cost != null ? value - cost : null;
+    const sig = computeSignal(h);
+    const label = h.kind === "stock" ? h.symbol : (h.name || h.type);
+    return `- ${label} (${h.kind === "stock" ? "stock" : h.type}): qty ${h.qty}, avg cost ${fmtMoney(h.avgCost)}, ` +
+      `current price ${fmtMoney(price)}, value ${fmtMoney(value)}, gain/loss ${fmtMoney(gl)}, dashboard signal: ${sig.text}`;
+  }).join("\n");
+}
+
+function renderResearchInputs() {
+  const type = document.getElementById("researchType").value;
+  const container = document.getElementById("researchInputs");
+  const fields = RESEARCH_FIELDS[type] || [];
+  container.innerHTML = "";
+
+  if (type === "portfolio_risk") {
+    container.innerHTML = `<p class="muted small">This will use your ${state.holdings.length} real holding(s) from the Stocks and Metals tabs automatically — no input needed.</p>`;
+    return;
+  }
+
+  fields.forEach(f => {
+    const row = document.createElement("div");
+    row.className = "field-row";
+    let prefill = "";
+    if (f.id === "riIndustry" && type === "diversification") prefill = dominantHoldingCategory();
+    row.innerHTML = f.textarea
+      ? `<span>${f.label}</span><textarea id="${f.id}" rows="3" placeholder="${f.placeholder}" style="background:var(--panel-2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;flex:1;min-width:220px;font-family:inherit;"></textarea>`
+      : `<span>${f.label}</span><input type="text" id="${f.id}" placeholder="${f.placeholder}" value="${prefill}">`;
+    container.appendChild(row);
+  });
+}
+
+async function callAnthropic(prompt, key, model) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": key,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({ model, max_tokens: 3000, messages: [{ role: "user", content: prompt }] })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || ("HTTP " + res.status));
+  return (data.content || []).map(c => c.text || "").join("\n");
+}
+
+async function callOpenAI(prompt, key, model) {
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "content-type": "application/json", "authorization": "Bearer " + key },
+    body: JSON.stringify({ model, max_tokens: 3000, messages: [{ role: "user", content: prompt }] })
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || ("HTTP " + res.status));
+  return data.choices[0].message.content;
+}
+
+async function callAI(prompt) {
+  const { aiProvider, aiApiKey, aiModel } = state.settings;
+  if (!aiApiKey) throw new Error("No API key set. Add one below under \"AI Setup\" first.");
+  const model = aiModel || (aiProvider === "anthropic" ? "claude-sonnet-5" : "gpt-4o-mini");
+  return aiProvider === "openai" ? callOpenAI(prompt, aiApiKey, model) : callAnthropic(prompt, aiApiKey, model);
+}
+
+// Minimal markdown -> HTML converter (headers, bold, italics, lists, paragraphs).
+// Deliberately simple — this app has no dependencies, so a full markdown
+// library would be overkill for formatting an AI text response.
+function mdToHtml(md) {
+  const escape = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const lines = escape(md).split("\n");
+  let html = "";
+  let inList = false;
+  for (let line of lines) {
+    const heading = line.match(/^(#{1,3})\s+(.*)/);
+    const listItem = line.match(/^[-*]\s+(.*)/);
+    line = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>");
+
+    if (heading) {
+      if (inList) { html += "</ul>"; inList = false; }
+      const level = heading[1].length + 2; // h3-h5 keeps it visually subordinate to page headers
+      html += `<h${level}>${line.replace(/^#{1,3}\s+/, "")}</h${level}>`;
+    } else if (listItem) {
+      if (!inList) { html += "<ul>"; inList = true; }
+      html += `<li>${line.replace(/^[-*]\s+/, "")}</li>`;
+    } else if (line.trim() === "") {
+      if (inList) { html += "</ul>"; inList = false; }
+    } else {
+      if (inList) { html += "</ul>"; inList = false; }
+      html += `<p>${line}</p>`;
+    }
+  }
+  if (inList) html += "</ul>";
+  return html;
+}
+
+let lastResearchText = "";
+
+async function generateResearch() {
+  const type = document.getElementById("researchType").value;
+  const statusEl = document.getElementById("researchStatus");
+  const outputPanel = document.getElementById("researchOutputPanel");
+  const outputEl = document.getElementById("researchOutput");
+  const btn = document.getElementById("generateResearchBtn");
+
+  const vals = {};
+  (RESEARCH_FIELDS[type] || []).forEach(f => {
+    const el = document.getElementById(f.id);
+    vals[f.id.replace("ri", "").replace(/^./, c => c.toLowerCase())] = el ? el.value.trim() : "";
+  });
+
+  let prompt;
+  if (type === "portfolio_risk") {
+    prompt = PROMPT_TEMPLATES.portfolio_risk({ portfolio: buildPortfolioSummary() });
+  } else if (type === "stock_analysis") {
+    const stock = vals.stock;
+    if (!stock) { alert("Please enter a stock ticker or company name."); return; }
+    const match = state.holdings.find(h => h.kind === "stock" && h.symbol === stock.toUpperCase());
+    prompt = PROMPT_TEMPLATES.stock_analysis({ stock, context: match ? buildPortfolioSummary() : "" });
+  } else if (type === "econ_indicator") {
+    if (!vals.indicator || !vals.market) { alert("Please fill in both fields."); return; }
+    prompt = PROMPT_TEMPLATES.econ_indicator(vals);
+  } else if (type === "news_impact") {
+    if (!vals.news) { alert("Please describe the recent news or event."); return; }
+    prompt = PROMPT_TEMPLATES.news_impact(vals);
+  } else {
+    if (!vals.industry) { alert("Please enter an industry."); return; }
+    prompt = PROMPT_TEMPLATES[type](vals);
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Generating…";
+  statusEl.textContent = "Contacting your configured AI provider…";
+  outputPanel.classList.add("hidden");
+
+  try {
+    const text = await callAI(prompt);
+    lastResearchText = text;
+    outputEl.innerHTML = mdToHtml(text);
+    outputPanel.classList.remove("hidden");
+    statusEl.textContent = "Done. Generated " + new Date().toLocaleString() + ".";
+  } catch (e) {
+    statusEl.textContent = "⚠ " + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "✨ Generate Analysis";
+  }
+}
+
+document.getElementById("researchType").addEventListener("change", renderResearchInputs);
+document.getElementById("generateResearchBtn").addEventListener("click", generateResearch);
+document.getElementById("copyResearchBtn").addEventListener("click", () => {
+  navigator.clipboard.writeText(lastResearchText).then(() => showToast("Copied to clipboard."));
+});
+document.getElementById("saveAiSettingsBtn").addEventListener("click", () => {
+  state.settings.aiProvider = document.getElementById("aiProviderSelect").value;
+  state.settings.aiModel = document.getElementById("aiModelInput").value.trim();
+  state.settings.aiApiKey = document.getElementById("aiApiKeyInput").value.trim();
+  saveState();
+  showToast("AI settings saved.");
+});
+document.getElementById("aiProviderSelect").addEventListener("change", e => {
+  const defaults = { anthropic: "claude-sonnet-5", openai: "gpt-4o-mini" };
+  document.getElementById("aiModelInput").value = defaults[e.target.value] || "";
+});
+
+/* ============================================================
    INIT
    ============================================================ */
 
 function init() {
   document.getElementById("refreshIntervalSelect").value = state.settings.refreshInterval;
   document.getElementById("apiKeyInput").value = state.settings.apiKey || "";
+  document.getElementById("aiProviderSelect").value = state.settings.aiProvider || "anthropic";
+  document.getElementById("aiModelInput").value = state.settings.aiModel || "claude-sonnet-5";
+  document.getElementById("aiApiKeyInput").value = state.settings.aiApiKey || "";
   updateNotificationStatus();
   renderLessons();
+  renderResearchInputs();
   renderAll();
   setupAutoRefresh();
   refreshAll(); // always fetch fresh data on load, including the S&P 500 benchmark chart
