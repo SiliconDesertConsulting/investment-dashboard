@@ -15,10 +15,12 @@ function defaultState() {
     holdings: [],        // { id, kind: 'stock'|'metal', type, symbol, name, qty, avgCost,
                           //   manualPrice, manualHigh, manualLow, notes,
                           //   lastPrice, lastPriceTime, source, closesHistory, week52High, week52Low,
-                          //   priceHistory: [{t, p}] }
+                          //   priceHistory: [{t, p}], lastSignalLevel }
+    benchmark: null,      // { closesHistory, week52High, week52Low, source, lastUpdated, lastSignalLevel }
     settings: {
       refreshInterval: 300000,
-      apiKey: ""
+      apiKey: "",
+      notificationsEnabled: false
     }
   };
 }
@@ -121,9 +123,9 @@ async function getYahooChart(symbol, viaProxy) {
 }
 
 // Provider C: Stooq daily history CSV -> compute our own range + moving averages.
-async function getStooqHistory(symbol) {
-  const sym = symbol.toLowerCase().includes(".") ? symbol.toLowerCase() : symbol.toLowerCase() + ".us";
-  const csv = await fetchText(`https://stooq.com/q/d/l/?s=${encodeURIComponent(sym)}&i=d`, 9000);
+// getStooqHistoryRaw expects the exact Stooq symbol (e.g. "aapl.us" or "^spx").
+async function getStooqHistoryRaw(rawSymbol) {
+  const csv = await fetchText(`https://stooq.com/q/d/l/?s=${encodeURIComponent(rawSymbol)}&i=d`, 9000);
   const lines = csv.trim().split("\n");
   if (lines.length < 2 || !/date/i.test(lines[0])) throw new Error("no data");
   const rows = lines.slice(1).map(l => l.split(","));
@@ -136,6 +138,13 @@ async function getStooqHistory(symbol) {
     week52Low: Math.min(...closes.slice(-252)),
     source: "Stooq (historical)"
   };
+}
+
+async function getStooqHistory(symbol) {
+  const sym = symbol.toLowerCase().includes(".") || symbol.startsWith("^")
+    ? symbol.toLowerCase()
+    : symbol.toLowerCase() + ".us";
+  return getStooqHistoryRaw(sym);
 }
 
 // Provider D: Twelve Data quote (only used if the user supplied a free key).
@@ -183,6 +192,26 @@ async function getStockData(symbol, apiKey, log) {
     }
   }
   return null; // all providers failed — caller falls back to manual price
+}
+
+// S&P 500 benchmark — same idea as getStockData, but using the index's own
+// symbols (Yahoo: ^GSPC, Stooq: ^spx) instead of a per-holding ticker.
+async function getSP500Data(log) {
+  const attempts = [
+    { name: "Yahoo Finance", fn: () => getYahooChart("^GSPC", false) },
+    { name: "Yahoo Finance (proxy)", fn: () => getYahooChart("^GSPC", true) },
+    { name: "Stooq history", fn: () => getStooqHistoryRaw("^spx") }
+  ];
+  for (const attempt of attempts) {
+    try {
+      const result = await attempt.fn();
+      log.push(`✔ S&P 500: ${attempt.name} succeeded`);
+      return result;
+    } catch (e) {
+      log.push(`✘ S&P 500: ${attempt.name} failed (${e.message})`);
+    }
+  }
+  return null;
 }
 
 /* ============================================================
@@ -276,6 +305,55 @@ function getEffectivePrice(h) {
 }
 
 /* ============================================================
+   NOTIFICATIONS — alert the user when a signal flips to green/red
+   ============================================================ */
+
+function requestNotificationPermission() {
+  if (!("Notification" in window)) {
+    alert("This browser doesn't support notifications.");
+    return;
+  }
+  Notification.requestPermission().then(perm => {
+    state.settings.notificationsEnabled = perm === "granted";
+    saveState();
+    updateNotificationStatus();
+    if (perm === "granted") {
+      new Notification("Investment Dashboard", { body: "Notifications enabled — you'll be alerted when a signal changes." });
+    }
+  });
+}
+
+function updateNotificationStatus() {
+  const el = document.getElementById("notificationStatus");
+  if (!("Notification" in window)) {
+    el.textContent = "Not supported in this browser.";
+  } else if (Notification.permission === "granted" && state.settings.notificationsEnabled) {
+    el.textContent = "✅ Enabled";
+  } else if (Notification.permission === "denied") {
+    el.textContent = "🚫 Blocked — enable notifications for this site in your browser settings.";
+  } else {
+    el.textContent = "Off";
+  }
+}
+
+// Compares a holding's (or the benchmark's) new signal against the last one
+// we saw, and fires a notification only on a meaningful transition — never
+// on every refresh, so this can't spam the user.
+function checkSignalChange(obj, label) {
+  const sig = computeSignal(obj);
+  const prev = obj.lastSignalLevel;
+  obj.lastSignalLevel = sig.level;
+
+  if (prev == null || prev === sig.level) return; // first look, or unchanged — stay quiet
+  if (sig.level !== "green" && sig.level !== "red") return; // only alert on actionable flips
+
+  if (state.settings.notificationsEnabled && "Notification" in window && Notification.permission === "granted") {
+    const icon = sig.level === "green" ? "🟢" : "🔴";
+    new Notification(`${icon} ${label}: ${sig.text}`, { body: sig.detail });
+  }
+}
+
+/* ============================================================
    REFRESH — pull live data for every holding
    ============================================================ */
 
@@ -317,6 +395,33 @@ async function refreshAll() {
     } catch (e) {
       log.push(`✘ ${h.name || h.symbol}: unexpected error (${e.message})`);
     }
+
+    checkSignalChange(h, h.name || h.symbol || h.type);
+  }
+
+  // Refresh the S&P 500 benchmark alongside everything else.
+  try {
+    const spData = await getSP500Data(log);
+    if (spData) {
+      state.benchmark = Object.assign({}, state.benchmark, {
+        lastPrice: spData.price,
+        closesHistory: spData.closesHistory || (state.benchmark && state.benchmark.closesHistory) || null,
+        week52High: spData.week52High != null ? spData.week52High : (state.benchmark && state.benchmark.week52High) || null,
+        week52Low: spData.week52Low != null ? spData.week52Low : (state.benchmark && state.benchmark.week52Low) || null,
+        source: spData.source,
+        lastUpdated: Date.now(),
+        priceIsManual: false,
+        manualPrice: null,
+        priceHistory: state.benchmark && state.benchmark.priceHistory || []
+      });
+      state.benchmark.priceHistory.push({ t: Date.now(), p: spData.price });
+      if (state.benchmark.priceHistory.length > 1000) state.benchmark.priceHistory.shift();
+      checkSignalChange(state.benchmark, "S&P 500");
+    } else {
+      log.push("⚠ S&P 500: all sources failed — showing last known chart data, if any");
+    }
+  } catch (e) {
+    log.push(`✘ S&P 500: unexpected error (${e.message})`);
   }
 
   saveState();
@@ -477,6 +582,81 @@ function renderDashboard() {
   renderDonut(holdings);
   renderNeedsLook(holdings);
   renderDashboardTable(holdings);
+  renderSP500Chart();
+}
+
+/* ---------- S&P 500 market timing chart ---------- */
+
+let sp500ChartInstance = null;
+
+function rollingAverage(arr, window) {
+  const out = new Array(arr.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < arr.length; i++) {
+    sum += arr[i];
+    if (i >= window) sum -= arr[i - window];
+    if (i >= window - 1) out[i] = sum / window;
+  }
+  return out;
+}
+
+function renderSP500Chart() {
+  const canvas = document.getElementById("sp500Chart");
+  const sigEl = document.getElementById("sp500Signal");
+  const updatedEl = document.getElementById("sp500Updated");
+  const b = state.benchmark;
+
+  if (!b || !b.closesHistory || b.closesHistory.length < 5) {
+    sigEl.innerHTML = "";
+    updatedEl.textContent = "Not loaded yet — click \"Refresh now\", or check Settings → Data Provider Status if this persists.";
+    return;
+  }
+
+  const sig = computeSignal(b);
+  sigEl.innerHTML = signalBadge(sig);
+  updatedEl.textContent = "Last updated: " + (b.lastUpdated ? new Date(b.lastUpdated).toLocaleString() : "—") +
+    " · source: " + (b.source || "—");
+
+  if (typeof Chart === "undefined") {
+    updatedEl.textContent += " (chart library failed to load — check your internet connection)";
+    return;
+  }
+
+  const hist = b.closesHistory;
+  const labels = hist.map((_, i) => i - hist.length + 1);
+  const sma50 = rollingAverage(hist, 50);
+  const sma200 = hist.length >= 200 ? rollingAverage(hist, 200) : null;
+
+  const high = b.week52High || Math.max(...hist);
+  const low = b.week52Low || Math.min(...hist);
+  const buyThreshold = low + 0.25 * (high - low);
+  const sellThreshold = high - 0.25 * (high - low);
+
+  const datasets = [
+    { label: "S&P 500", data: hist, borderColor: "#5b8def", borderWidth: 2, pointRadius: 0, tension: 0.1 },
+    { label: "50-day average", data: sma50, borderColor: "#f1c40f", borderWidth: 1.5, pointRadius: 0, borderDash: [4, 4] },
+    { label: "Buy zone (bottom 25%)", data: hist.map(() => buyThreshold), borderColor: "#2ecc71", borderWidth: 1, pointRadius: 0, borderDash: [6, 3] },
+    { label: "Sell zone (top 25%)", data: hist.map(() => sellThreshold), borderColor: "#ff5c5c", borderWidth: 1, pointRadius: 0, borderDash: [6, 3] }
+  ];
+  if (sma200) {
+    datasets.splice(2, 0, { label: "200-day average", data: sma200, borderColor: "#d2b4de", borderWidth: 1.5, pointRadius: 0, borderDash: [2, 2] });
+  }
+
+  if (sp500ChartInstance) sp500ChartInstance.destroy();
+  sp500ChartInstance = new Chart(canvas.getContext("2d"), {
+    type: "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: { ticks: { maxTicksLimit: 8, color: "#8b93a7" }, grid: { color: "#2b3348" } },
+        y: { ticks: { color: "#8b93a7" }, grid: { color: "#2b3348" } }
+      },
+      plugins: { legend: { labels: { color: "#e8ebf3", boxWidth: 12 } } }
+    }
+  });
 }
 
 const CATEGORY_COLORS = {
@@ -734,6 +914,7 @@ document.getElementById("clearAllBtn").addEventListener("click", () => {
 });
 
 document.getElementById("refreshBtn").addEventListener("click", refreshAll);
+document.getElementById("enableNotificationsBtn").addEventListener("click", requestNotificationPermission);
 
 function showToast(msg) {
   const t = document.createElement("div");
@@ -848,10 +1029,11 @@ function renderLessons() {
 function init() {
   document.getElementById("refreshIntervalSelect").value = state.settings.refreshInterval;
   document.getElementById("apiKeyInput").value = state.settings.apiKey || "";
+  updateNotificationStatus();
   renderLessons();
   renderAll();
   setupAutoRefresh();
-  if (state.holdings.length) refreshAll();
+  refreshAll(); // always fetch fresh data on load, including the S&P 500 benchmark chart
 }
 
 init();
