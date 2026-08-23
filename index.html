@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>My Investment Dashboard</title>
 <link rel="stylesheet" href="style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -64,6 +65,18 @@
           <p class="muted small">Add some holdings to see signals here.</p>
         </div>
       </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header-row">
+        <h3 style="margin:0;">S&amp;P 500 — Market Timing Chart</h3>
+        <span id="sp500Signal"></span>
+      </div>
+      <p class="muted small">Price, its 50-day &amp; 200-day moving averages, and the historical "buy zone" / "sell zone" for the overall US stock market — a rough gauge of whether the market as a whole looks cheap or expensive right now.</p>
+      <div style="position:relative; height:320px;">
+        <canvas id="sp500Chart"></canvas>
+      </div>
+      <p id="sp500Updated" class="muted small">Not loaded yet.</p>
     </div>
 
     <div class="panel">
@@ -146,6 +159,13 @@
         </select>
       </label>
       <p class="muted small">Auto-refresh only runs while this page is open in your browser tab.</p>
+    </div>
+
+    <div class="panel">
+      <h3>Alerts</h3>
+      <p class="muted small">Get a browser notification the moment any holding (or the S&amp;P 500) flips to a 🟢 buy signal or a 🔴 pricey signal — no need to keep checking the dashboard yourself.</p>
+      <button class="btn btn-secondary" id="enableNotificationsBtn">🔔 Enable Notifications</button>
+      <span id="notificationStatus" class="muted small"></span>
     </div>
 
     <div class="panel">
