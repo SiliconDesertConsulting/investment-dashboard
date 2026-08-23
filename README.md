@@ -17,6 +17,14 @@ Everything runs entirely in your browser. There is no server and no database —
 - **Stocks**: the app tries several free sources in order (Yahoo Finance, then Yahoo via a CORS-friendly relay, then Stooq) and automatically falls back through them. Free stock APIs without a signup are not perfectly reliable — if all of them are temporarily unreachable, the app tells you in the Settings → "Data Provider Status" log, and you can always type in a price yourself so the dashboard is never stuck.
 - **Optional**: in Settings, you can paste a free [Twelve Data](https://twelvedata.com/pricing) API key (no credit card needed, 800 free requests/day) to add one more reliable stock source to the fallback chain. Not required.
 
+## S&P 500 market timing chart
+
+The Dashboard tab includes a chart of the S&P 500 (the overall US stock market) with its price, 50-day and 200-day moving averages, and dashed "buy zone" / "sell zone" reference lines marking the bottom and top 25% of its recent range — plus the same 🟢🟡🔴 signal badge used everywhere else. This loads automatically, even before you add any holdings, and refreshes on the same schedule as the rest of the dashboard. It uses [Chart.js](https://www.chartjs.org/) loaded from a public CDN.
+
+## Browser notifications
+
+In Settings → Alerts, click "Enable Notifications" to let your browser ask for permission. Once granted, you'll get a desktop notification the moment any holding — or the S&P 500 — flips to a 🟢 buy signal or a 🔴 pricey signal. Notifications only fire on a change, never on every refresh, so they won't spam you. This only works while the dashboard tab is open in your browser (there's no server to send notifications when it's closed).
+
 ## The "is now a good time to buy" signal
 
 For each holding, the app looks at the current price against whatever recent-price context it has (a ~1-year price history from the data source, or a 52-week high/low, or — if neither is available — the price history the app has quietly collected itself while you keep it open) and gives one of three plain-English verdicts:
